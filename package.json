@@ -2,7 +2,7 @@
 	"name":"twixt-online",
 	"version":"0.0.1",
 	"dependencies":{
-		"uhyoooooo":">=0.0.3",
+		"uhyoooooo":">=0.0.3-4",
 		"express":">=3.0"
 	}
 }
