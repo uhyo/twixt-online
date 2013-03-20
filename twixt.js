@@ -10,11 +10,10 @@ game.useUser(Game.DOMUser,function(user){
 });
 game.event.on("gamestart",function(){
 	//プレイヤー数を考えておく
-	var playerNumber = game.env==="standalone" ? 1 : 2;
 	var twixt=game.add(TwixtHost);
 	//ユーザーの出現を待つ
 	game.event.on("entry",function(user){
-		if(twixt.userlist.users.length<playerNumber){
+		if(twixt.userlist.users.length<setting.playerNumber){
 			//参加枠あり
 			twixt.event.emit("entry",user);
 		}
@@ -25,6 +24,8 @@ game.start();
 //設定
 //Global!!!
 var setting={
+	//人数
+	playerNumber: game.env==="standalone" ? 1 : 2,
 	//点の数
 	fieldx:24,
 	fieldy:24,
@@ -168,19 +169,39 @@ Board.prototype.render=function(view){
 	var div=view.getItem();
 };
 function UserList(game,event,param){
-	this.users=[];	//UserPanel[]
+	this.users=[];	//UserBox[]
 }
 UserList.prototype.init=function(game,event,param){
 	event.on("entry",function(user){
 		//ユーザーが追加された
 		var box=game.add(UserBox,{
+			list:this,
 			user:user,
 			index:this.users.length,
 		});
 		event.emit("addUserBox",box);
+		//ユーザーがいなくなったとき
+		user.event.on("disconnect",function(){
+			event.emit("bye",user);
+		});
 	}.bind(this));
 	event.on("addUserBox",function(box){
 		this.users.push(box);
+	}.bind(this));
+	event.on("bye",function(user){
+		//ユーザーがいなくなった
+	});
+	//UserBoxのひとが名前を決定した
+	event.on("ready",function(box){
+		if(this.users.length===setting.playerNumber && this.users.every(function(box){
+			return box.state===UserBox.STATE_PREPARING && box.name!=null;
+		})){
+			//全員準備OK
+			this.users.forEach(function(box,i){
+				//ターンプレイヤーを設定
+				box.event.emit("state", i===0 ? UserBox.STATE_TURNPLAYER : UserBox.STATE_WAITING);
+			});
+		}
 	}.bind(this));
 };
 UserList.prototype.renderInit=function(view){
@@ -206,6 +227,7 @@ function UserBox(game,event,param){
 	this.index=param.index||0;
 	this.user=param.user;
 	//ユーザー情報
+	this.list=param.list;	//UserList
 	this.name=null;
 	this.state=UserBox.STATE_PREPARING;
 }
@@ -213,6 +235,23 @@ UserBox.STATE_PREPARING=1;
 UserBox.STATE_TURNPLAYER=2;
 UserBox.STATE_WAITING=3;
 UserBox.prototype.init=function(game,event,param){
+	//ユーザー名
+	event.on("setName",function(name){
+		this.name=name;
+		//親に伝える
+		this.list.event.emit("ready",this);
+	}.bind(this));
+	if(this.state===UserBox.STATE_PREPARING && this.name==null){
+		//まだ名前が決まっていない（初期状態）
+		this.user.event.once("setName",function(name){
+			event.emit("setName",name);
+		}.bind(this));
+	}
+	//状態変化
+	event.on("state",function(state){
+		this.state=state;
+	}.bind(this));
+
 };
 UserBox.prototype.renderInit=function(view){
 	var div=document.createElement("div");
@@ -232,8 +271,38 @@ UserBox.prototype.render=function(view){
 	var store=view.getStore();
 	if(this.state===UserBox.STATE_PREPARING){
 		//準備中
-		store.name.textContent="";
 		store.state.textContent="準備中";
+		if(this.name==null){
+			//名前が未決定だ!
+			if(this.user.internal){
+				store.name.textContent="";
+				var input=document.createElement("input");
+				input.type="text";
+				input.size=30;
+				input.required=true;
+				input.placeholder="名前を入力";
+				store.name.appendChild(input);
+				//決定
+				input=document.createElement("input");
+				input.type="button";
+				input.value="決定";
+				input.addEventListener("click",function(e){
+					//名前を決定した
+					var nameinput=store.name.getElementsByTagName("input").item(0);
+					if(!nameinput.value)return;
+					this.user.event.emit("setName",nameinput.value);
+				}.bind(this),false);
+				store.name.appendChild(input);
+			}else{
+				//待っている
+				store.name.textContent="名前入力中";
+			}
+		}else{
+			store.name.textContent=this.name;
+		}
+	}else{
+		store.name.textContent=this.name;
+		store.state.textContent= this.state===UserBox.STATE_TURNPLAYER ? "ターンプレイヤー" : "待機中";
 	}
 };
 
