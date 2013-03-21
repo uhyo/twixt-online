@@ -22,6 +22,8 @@ game.event.on("gamestart",function(){
 game.start();
 
 //設定
+//Global!!! const
+var twixtNamespace=twixtNamespace;
 //Global!!!
 var setting={
 	//人数
@@ -47,8 +49,11 @@ var setting={
 	pointColor:"#333333",
 	//選択時の点の色
 	selectPointColor:"#9999ff",
+	holdedPointColor:"#ff99ff",
 	//ゴールラインの幅
 	goallineWidth:4,
+	//リンクの幅
+	linkWidth:4,
 	
 };
 //定義
@@ -90,6 +95,23 @@ TwixtHost.prototype.init=function(game,event,param){
 			//石を置くぞ!
 			_this.board.event.emit("putStone",_this.userlist.turn,x,y);
 		});
+		user.event.on("link",function(from,to){
+			//リンクをはる
+			if(!from || !to)return;	//不正
+			//ターンプレイヤーかどうかチェック
+			if(_this.state!==TwixtHost.STATE_PLAYING){
+				//まだ
+				return;
+			}
+			var ul=_this.userlist;
+			var tu=ul.users[ul.turn];
+			if(tu.user!==user){
+				//ターンプレイヤーではない
+				return;
+			}
+			//リンクを置くぞ!
+			_this.board.event.emit("putLink",_this.userlist.turn,from,to);
+		});
 		user.event.on("turnend",function(){
 			//ターン終了する
 			var ul=_this.userlist;
@@ -125,17 +147,123 @@ TwixtHost.prototype.render=function(view){
 };
 function Board(game,event,param){
 	this.stones={};	//"x,y":index
+	this.links={};	//"x1,y1,x2,y2":index(p1,p2: (x,y)-sorted)
 	this.host=param.host;	//TwixtHost
 }
 Board.prototype.init=function(game,event,param){
 	//index番のユーザーが石を置く
 	event.on("putStone",function(index,x,y){
-		if(this.stones[x+","+y]==null){
-			//まだない!置ける
-			this.stones[x+","+y]=index;
-			//置いた通知
-			this.host.userlist.event.emit("putComplete",index);
+		if(this.stones[x+","+y]!=null){
+			//すでにある!置けない
+			return;
 		}
+		//1P
+		if(index===0 && (x===0 || x===setting.fieldx-1) ||
+		   index===1 && (y===0 || y===setting.fieldy-1)){
+			//ラインは越えられない
+			return;
+		   }
+		//まだない!置ける
+		event.emit("setStone",index,x,y);
+	}.bind(this));
+	event.on("setStone",function(index,x,y){
+		this.stones[x+","+y]=index;
+		//置いた通知
+		this.host.userlist.event.emit("putComplete",index);
+	}.bind(this));
+	//リンクを設置要請（確定ではないようだ）
+	event.on("putLink",function(index,from,to){
+		//2乗距離を算出
+		var d2=Math.pow(from.x-to.x,2)+Math.pow(from.y-to.y,2);
+		if(d2!==5){
+			//位置が合わない
+			return;
+		}
+		//fromとtoを並び替え?
+		var tmp;
+		if(from.x>to.x || from.x===to.x && from.y>to.y){
+			//fromのほうがあとだ!逆にする
+			var tmp=from;
+			from=to,to=tmp;
+		}
+		if(this.links[from.x+","+from.y+","+to.x+","+to.y]!=null){
+			//すでにリンクがある
+			return;
+		}
+		//既存リンクとあたり判定する
+		var flag=false;
+		var l1=makeLine(from.x,from.y,to.x,to.y);
+		//var ymn=Math.min(from.y,to.y), ymx=Math.max(from.y,to.y);
+		for(var key in this.links){
+			if(this.links[key]==null)continue;
+			var arr=key.split(",").map(function(x){return x-0;});
+			var l2=makeLine(arr[0],arr[1],arr[2],arr[3]);
+			var pt=hit(l1,l2);
+			//範囲内で重なるやつがあるとだめ
+			//xはソートされているがyはされていない
+			//var ymn2=Math.min(arr[1],arr[3]), ymx2=Math.max(arr[1],arr[3]);
+			if(from.x<pt.x && pt.x<to.x && arr[0]<pt.x && pt.x<arr[2]){
+				//範囲内にある
+				flag=true;
+				break;
+			}
+		}
+		if(flag){
+			//ぶつかるのがあった
+			return;
+		}
+		//リンク設置OK
+		event.emit("setLink",index,from,to);
+		//2点を通る直線の式（ax+by+c=0）を導く
+		function makeLine(x1,y1,x2,y2){
+			if(x1===x2){
+				//y軸に垂直
+				return {
+					a:1,
+					b:0,
+					c:-x1,
+				};
+			}else{
+				//その他
+				var m=(y2-y1)/(x2-x1);	//傾き
+				//y=m(x-x1)+y1
+				//y=mx-mx1+y1
+				//-mx+y+mx1-y1=0
+				return {
+					a:-m,
+					b:1,
+					c:m*x1-y1,
+				};
+			}
+		}
+		//交点を求める
+		function hit(line1,line2){
+			//hard
+			var det=line1.a*line2.b-line2.a*line1.b;
+			if(Math.abs(det)<=0.001){
+				//交点が一つに定まらない(det=0)
+				return {
+					x:null,
+					y:null
+				};
+			}
+			var x;
+			var y=(line2.a*line1.c-line1.a*line2.c)/det;
+			if(Math.abs(line1.a)>0.001){
+				//a!=0
+				x=-(line1.b*y+line1.c)/line1.a;
+			}else{
+				//この場合a2!=0
+				x=-(line2.b*y+line2.c)/line2.a;
+			}
+			return {
+				x:x,
+				y:y,
+			};
+		}
+	}.bind(this));
+	event.on("setLink",function(index,from,to){
+		this.links[from.x+","+from.y+","+to.x+","+to.y]=index;
 	}.bind(this));
 };
 Board.prototype.renderInit=function(view){
@@ -199,8 +327,8 @@ Board.prototype.renderInit=function(view){
 							c.setAttribute("fill",setting.pointColor);
 						}
 						//パラメータ
-						c.setAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","x",String(x));
-						c.setAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","y",String(y));
+						c.setAttributeNS(twixtNamespace,"x",String(x));
+						c.setAttributeNS(twixtNamespace,"y",String(y));
 						//ストアに保存
 						store["point_"+x+","+y]=c;
 					}));
@@ -212,30 +340,94 @@ Board.prototype.renderInit=function(view){
 						c.setAttribute("fill","transparent");
 						c.className.baseVal="cover";
 						//パラメータ
-						c.setAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","x",String(x));
-						c.setAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","y",String(y));
+						c.setAttributeNS(twixtNamespace,"x",String(x));
+						c.setAttributeNS(twixtNamespace,"y",String(y));
 					}));
 				}
 			}
+			//マウス選択時にかぶせるやつを作っておく
+			store.mouseover=svg("circle",function(c){
+				c.r.baseVal.valueAsString=setting.pointClickRadius+"px";
+				c.setAttribute("fill",setting.selectPointColor);
+				c.setAttribute("fill-opacity","0.4");
+				c.className.baseVal="cover";
+			});
+			//リンク用
+			store.linkStart=svg("circle",function(c){
+				c.r.baseVal.valueAsString=setting.pointClickRadius+"px";
+				c.setAttribute("fill",setting.holdedPointColor);
+				c.setAttribute("fill-opacity","0.4");
+				c.className.baseVal="cover";
+			});
 			//マウスによる選択
-			var selectedCircle=null;
 			g.addEventListener("mouseover",function(e){
 				var t=e.target;
-				if(selectedCircle && selectedCircle!==t){
-					selectedCircle.setAttribute("fill","transparent");	//戻す
-					t.removeAttribute("fill-opacity");
-				}
-				if(t.tagName==="circle" && t.className.baseVal==="cover"){
+				var c=store.mouseover;
+				if(t.tagName==="circle" && t.className.baseVal==="cover" && t!==c){
 					//選択
-					t.setAttribute("fill",setting.selectPointColor);
-					t.setAttribute("fill-opacity","0.4");
-					selectedCircle=t;
-				}else{
-					selectedCircle=null;
+					//マウスオーバーのやつをここへ
+					var x=t.getAttributeNS(twixtNamespace,"x")-0;
+					var y=t.getAttributeNS(twixtNamespace,"y")-0;
+					c.cx.baseVal.valueAsString=(x+1)*setting.pointDistance+"px";
+					c.cy.baseVal.valueAsString=(y+1)*setting.pointDistance+"px";
+					c.setAttributeNS(twixtNamespace,"x",String(x));
+					c.setAttributeNS(twixtNamespace,"y",String(y));
+					g.appendChild(c);
 				}
 			},false);
+			//イベント
+			//リンク準備
+			var linkTarget=null;	//{x:..., y:...}
+			g.addEventListener("click",function(e){
+				var t=e.target;
+				if(t.tagName==="circle" && t.className.baseVal==="cover"){
+					//点を選択
+					var x=t.getAttributeNS(twixtNamespace,"x")-0;
+					var y=t.getAttributeNS(twixtNamespace,"y")-0;
+					//石状況をチェック
+					var st=this.stones[x+","+y];
+					if(st==null){
+						//まだ石が置かれていない
+						game.user.event.emit("tap",x,y);
+					}else{
+						//自分の色かチェック
+						var ul=this.host.userlist;
+						if(game.user===ul.users[st].user && ul.turn===st){
+							//自分の色だ! リンク置く準備
+							var c=store.linkStart;
+							if(linkTarget){
+								//既に選択済み
+								if(linkTarget.x===x && linkTarget.y===y){
+									//取り消し
+								}else{
+									//2点を定めた。2乗距離を計算
+									var d2=Math.pow(x-linkTarget.x,2)+Math.pow(y-linkTarget.y,2);
+									if(d2===5){
+										//桂馬の位置
+										game.user.event.emit("link",linkTarget,{
+											x:x,y:y
+										});
+									}
+								}
+								c.parentNode.removeChild(c);
+								linkTarget=null;
+							}else{
+								c.cx.baseVal.valueAsString=(x+1)*setting.pointDistance+"px";
+								c.cy.baseVal.valueAsString=(y+1)*setting.pointDistance+"px";
+								c.setAttributeNS(twixtNamespace,"x",String(x));
+								c.setAttributeNS(twixtNamespace,"y",String(y));
+								g.appendChild(c);
+								linkTarget={
+									x:x,
+									y:y,
+								};
+							}
+						}
+					}
+				}
+			}.bind(_this),false);
 			//本当はrenderでやるべきだけど・・・石がおかれたら書き換え
-			_this.event.on("putStone",function(index,x,y){
+			_this.event.on("setStone",function(index,x,y){
 				var id=_this.stones[x+","+y] || index;	//どっち?
 				var c=store["point_"+x+","+y];
 
@@ -287,6 +479,24 @@ Board.prototype.renderInit=function(view){
 				line.setAttribute("stroke-linecap","square");
 			}));
 		}));
+		//リンク
+		s.appendChild(svg("g",function(g){
+			//リンクが置かれたら書き換え
+			g.id="links";
+			_this.event.on("setLink",function(index,from,to){
+				//リンク（線）
+				g.appendChild(svg("line",function(line){
+					line.x1.baseVal.valueAsString=(from.x+1)*setting.pointDistance+"px";
+					line.y1.baseVal.valueAsString=(from.y+1)*setting.pointDistance+"px";
+					line.x2.baseVal.valueAsString=(to.x+1)*setting.pointDistance+"px";
+					line.y2.baseVal.valueAsString=(to.y+1)*setting.pointDistance+"px";
+					//色
+					line.setAttribute("stroke",setting.color[index]);
+					line.setAttribute("stroke-width",setting.linkWidth+"px");
+					line.setAttribute("stroke-linecap","butt");
+				}));
+			});
+		}));
 	});
 	//スタイル設定
 	var store=view.getStore();
@@ -296,16 +506,6 @@ Board.prototype.renderInit=function(view){
 	div.style.display="inline-block";
 	div.style.verticalAlign="top";
 	div.appendChild(s);
-	//イベント
-	s.addEventListener("click",function(e){
-		var t=e.target;
-		if(t.tagName==="circle" && t.className.baseVal==="cover"){
-			//点を選択
-			var x=t.getAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","x")-0;
-			var y=t.getAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","y")-0;
-			game.user.event.emit("tap",x,y);
-		}
-	},false);
 	return div;
 
 };
