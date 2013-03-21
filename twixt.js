@@ -186,8 +186,13 @@ Board.prototype.init=function(game,event,param){
 			var tmp=from;
 			from=to,to=tmp;
 		}
-		if(this.links[from.x+","+from.y+","+to.x+","+to.y]!=null){
+		var ln=this.links[from.x+","+from.y+","+to.x+","+to.y];
+		if(ln!=null){
 			//すでにリンクがある
+			if(ln===index){
+				//自分のだ!外す
+				event.emit("elimLink",index,from,to);
+			}
 			return;
 		}
 		//既存リンクとあたり判定する
@@ -264,6 +269,9 @@ Board.prototype.init=function(game,event,param){
 	}.bind(this));
 	event.on("setLink",function(index,from,to){
 		this.links[from.x+","+from.y+","+to.x+","+to.y]=index;
+	}.bind(this));
+	event.on("elimLink",function(index,from,to){
+		delete this.links[from.x+","+from.y+","+to.x+","+to.y];
 	}.bind(this));
 };
 Board.prototype.renderInit=function(view){
@@ -481,11 +489,29 @@ Board.prototype.renderInit=function(view){
 		}));
 		//リンク
 		s.appendChild(svg("g",function(g){
+			for(var key in _this.links){
+				var arr=key.split(",").map(function(x){return x-0;});
+				newLink(_this.links[key],{
+					x:arr[0],y:arr[1],
+				},{
+					x:arr[2],y:arr[3],
+				});
+			}
 			//リンクが置かれたら書き換え
 			g.id="links";
 			_this.event.on("setLink",function(index,from,to){
 				//リンク（線）
-				g.appendChild(svg("line",function(line){
+				newLink(index,from,to);
+			});
+			//外されたらけす
+			_this.event.on("elimLink",function(index,from,to){
+				var linkaddr="link_"+from.x+","+from.y+","+to.x+","+to.y;
+				var link=store[linkaddr];
+				delete store[linkaddr];
+				link.parentNode.removeChild(link);
+			});
+			function newLink(index,from,to){
+				var line=svg("line",function(line){
 					line.x1.baseVal.valueAsString=(from.x+1)*setting.pointDistance+"px";
 					line.y1.baseVal.valueAsString=(from.y+1)*setting.pointDistance+"px";
 					line.x2.baseVal.valueAsString=(to.x+1)*setting.pointDistance+"px";
@@ -494,8 +520,10 @@ Board.prototype.renderInit=function(view){
 					line.setAttribute("stroke",setting.color[index]);
 					line.setAttribute("stroke-width",setting.linkWidth+"px");
 					line.setAttribute("stroke-linecap","butt");
-				}));
-			});
+				});
+				store["link_"+from.x+","+from.y+","+to.x+","+to.y]=line;
+				g.appendChild(line);
+			}
 		}));
 	});
 	//スタイル設定
