@@ -31,6 +31,7 @@ var setting={
 	fieldy:24,
 	//描画関係
 	backgroundColor:"#cccccc",
+	bglineColor:"#00aa00",
 	//プレイヤーの色
 	color:["#ffffff","#ff0000"],
 	lightColor:["#eeeeee","#ffcccc"],
@@ -38,24 +39,76 @@ var setting={
 	pointDistance:24,
 	//点の半径
 	pointRadius:2,
+	//石の半径
+	stoneRadius:5,
+	//判定用の点の半径
+	pointClickRadius:12,
 	//点の色
 	pointColor:"#333333",
+	//選択時の点の色
+	selectPointColor:"#9999ff",
 	//ゴールラインの幅
 	goallineWidth:4,
 	
 };
 //定義
 function TwixtHost(game,event,param){
-	this.board=game.add(Board);
-	this.userlist=game.add(UserList);
+	this.board=game.add(Board,{
+		host:this,
+	});
+	this.userlist=game.add(UserList,{
+		host:this,
+	});
+	this.state=TwixtHost.STATE_PREPARING;
 }
+TwixtHost.STATE_PREPARING=1;
+TwixtHost.STATE_PLAYING=2;
 TwixtHost.prototype.init=function(game,event,param){
 	//イベント待受
 	event.on("entry",function(user){
 		//ユーザー出現
-		console.log(user);
 		//丸投げ
 		this.userlist.event.emit("entry",user);
+		//今度のこと
+		var _this=this;
+		user.event.on("tap",function(x,y){
+			//ターンプレイヤーかどうかチェック
+			if(_this.state!==TwixtHost.STATE_PLAYING){
+				//まだ
+				return;
+			}
+			var ul=_this.userlist;
+			var tu=ul.users[ul.turn];
+			if(tu.user!==user){
+				//ターンプレイヤーではない
+				return;
+			}
+			if(ul.put){
+				//既に石をおいた
+				return;
+			}
+			//石を置くぞ!
+			_this.board.event.emit("putStone",_this.userlist.turn,x,y);
+		});
+		user.event.on("turnend",function(){
+			//ターン終了する
+			var ul=_this.userlist;
+			var tu=ul.users[ul.turn];
+			if(tu.user!==user){
+				//ターンプレイヤーではない
+				return;
+			}
+			//ターンをまわす
+			ul.event.emit("setTurn",(ul.turn+1)%ul.users.length);
+			ul.users.forEach(function(box,i){
+				//ターンプレイヤーを設定
+				box.event.emit("state", i===ul.turn ? UserBox.STATE_TURNPLAYER : UserBox.STATE_WAITING);
+			});
+		});
+	}.bind(this));
+	//状態変化
+	event.on("state",function(state){
+		this.state=state;
 	}.bind(this));
 };
 TwixtHost.prototype.renderTop=true;
@@ -71,24 +124,57 @@ TwixtHost.prototype.render=function(view){
 	var div=view.getItem();
 };
 function Board(game,event,param){
+	this.stones={};	//"x,y":index
+	this.host=param.host;	//TwixtHost
 }
 Board.prototype.init=function(game,event,param){
+	//index番のユーザーが石を置く
+	event.on("putStone",function(index,x,y){
+		if(this.stones[x+","+y]==null){
+			//まだない!置ける
+			this.stones[x+","+y]=index;
+			//置いた通知
+			this.host.userlist.event.emit("putComplete",index);
+		}
+	}.bind(this));
 };
 Board.prototype.renderInit=function(view){
 	//盤面を初期化する
+	var _this=this;
+	var store=view.getStore();
 	var s=svg("svg",function(s){
 		s.width.baseVal.valueAsString=setting.pointDistance*(setting.fieldx+1)+"px";
 		s.height.baseVal.valueAsString=setting.pointDistance*(setting.fieldx+1)+"px";
 		//背景
-		s.appendChild(svg("rect",function(rect){
-			rect.width.baseVal.valueAsString="100%";
-			rect.height.baseVal.valueAsString="100%";
-			//why not fill property
-			rect.setAttribute("fill",setting.backgroundColor);
+		s.appendChild(svg("g",function(g){
+			g.appendChild(svg("rect",function(rect){
+				rect.width.baseVal.valueAsString="100%";
+				rect.height.baseVal.valueAsString="100%";
+				//why not fill property
+				rect.setAttribute("fill",setting.backgroundColor);
+			}));
+			//背景の模様
+			//[x1,y1,x2,y2]
+			[
+			 [1,1,setting.fieldx-1,setting.fieldy/2],[1,setting.fieldy-2,setting.fieldx-1,setting.fieldy/2-1],
+			 [setting.fieldx-2,1,0,setting.fieldy/2],[setting.fieldx-2,setting.fieldy-2,0,setting.fieldy/2-1],
+			 [1,1,setting.fieldx/2,setting.fieldy-1],[setting.fieldx-2,1,setting.fieldx/2-1,setting.fieldy-1],
+			 [setting.fieldx/2,0,1,setting.fieldy-2],[setting.fieldx/2-1,0,setting.fieldx-2,setting.fieldy-2],
+			].forEach(function(arr){
+				g.appendChild(svg("line",function(line){
+					line.x1.baseVal.valueAsString=(arr[0]+1)*setting.pointDistance+"px";
+					line.y1.baseVal.valueAsString=(arr[1]+1)*setting.pointDistance+"px";
+					line.x2.baseVal.valueAsString=(arr[2]+1)*setting.pointDistance+"px";
+					line.y2.baseVal.valueAsString=(arr[3]+1)*setting.pointDistance+"px";
+					line.setAttribute("stroke",setting.bglineColor);
+					line.setAttribute("stroke-width","1px");
+				}));
+			});
 		}));
 		//点のg
 		s.appendChild(svg("g",function(g){
 			g.id="points";
+			var stones=_this.stones;
 			//点をつけていく
 			for(var x=0;x<setting.fieldx;x++){
 				for(var y=0;y<setting.fieldy;y++){
@@ -99,15 +185,63 @@ Board.prototype.renderInit=function(view){
 						   //角はいらない
 						   continue;
 					}
-					var c=svg("circle",function(c){
+					//描画用
+					g.appendChild(svg("circle",function(c){
 						c.cx.baseVal.valueAsString=(x+1)*setting.pointDistance+"px";
 						c.cy.baseVal.valueAsString=(y+1)*setting.pointDistance+"px";
-						c.r.baseVal.valueAsString=setting.pointRadius+"px";
-						c.setAttribute("fill",setting.pointColor);
-					});
-					g.appendChild(c);
+						if(stones[x+","+y]){
+							//既に石が置いてある
+							c.r.baseVal.valueAsString=setting.stoneRadius+"px";
+							c.setAttribute("fill",setting.color[stones[x+","+y]]);
+						}else{
+							//まだ
+							c.r.baseVal.valueAsString=setting.pointRadius+"px";
+							c.setAttribute("fill",setting.pointColor);
+						}
+						//パラメータ
+						c.setAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","x",String(x));
+						c.setAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","y",String(y));
+						//ストアに保存
+						store["point_"+x+","+y]=c;
+					}));
+					//上に透明な円（判定用）を重ねる
+					g.appendChild(svg("circle",function(c){
+						c.cx.baseVal.valueAsString=(x+1)*setting.pointDistance+"px";
+						c.cy.baseVal.valueAsString=(y+1)*setting.pointDistance+"px";
+						c.r.baseVal.valueAsString=setting.pointClickRadius+"px";
+						c.setAttribute("fill","transparent");
+						c.className.baseVal="cover";
+						//パラメータ
+						c.setAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","x",String(x));
+						c.setAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","y",String(y));
+					}));
 				}
 			}
+			//マウスによる選択
+			var selectedCircle=null;
+			g.addEventListener("mouseover",function(e){
+				var t=e.target;
+				if(selectedCircle && selectedCircle!==t){
+					selectedCircle.setAttribute("fill","transparent");	//戻す
+					t.removeAttribute("fill-opacity");
+				}
+				if(t.tagName==="circle" && t.className.baseVal==="cover"){
+					//選択
+					t.setAttribute("fill",setting.selectPointColor);
+					t.setAttribute("fill-opacity","0.4");
+					selectedCircle=t;
+				}else{
+					selectedCircle=null;
+				}
+			},false);
+			//本当はrenderでやるべきだけど・・・石がおかれたら書き換え
+			_this.event.on("putStone",function(index,x,y){
+				var id=_this.stones[x+","+y] || index;	//どっち?
+				var c=store["point_"+x+","+y];
+
+				c.r.baseVal.valueAsString=setting.stoneRadius+"px";
+				c.setAttribute("fill",setting.color[id]);
+			});
 		}));
 		//ゴールライン的な
 		s.appendChild(svg("g",function(g){
@@ -162,6 +296,16 @@ Board.prototype.renderInit=function(view){
 	div.style.display="inline-block";
 	div.style.verticalAlign="top";
 	div.appendChild(s);
+	//イベント
+	s.addEventListener("click",function(e){
+		var t=e.target;
+		if(t.tagName==="circle" && t.className.baseVal==="cover"){
+			//点を選択
+			var x=t.getAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","x")-0;
+			var y=t.getAttributeNS("http://uhyohyohyo.sakura.ne.jp/namespace/twixt","y")-0;
+			game.user.event.emit("tap",x,y);
+		}
+	},false);
 	return div;
 
 };
@@ -170,6 +314,9 @@ Board.prototype.render=function(view){
 };
 function UserList(game,event,param){
 	this.users=[];	//UserBox[]
+	this.host=param.host;	//TwixtHost
+	this.turn=null;	//ターンプレイヤーの番号
+	this.put=null;	//すでに石をおいたかどうか
 }
 UserList.prototype.init=function(game,event,param){
 	event.on("entry",function(user){
@@ -201,7 +348,20 @@ UserList.prototype.init=function(game,event,param){
 				//ターンプレイヤーを設定
 				box.event.emit("state", i===0 ? UserBox.STATE_TURNPLAYER : UserBox.STATE_WAITING);
 			});
+			//ターン順番を決定
+			this.turn=0;
+			this.put=false;
+			this.host.event.emit("state",TwixtHost.STATE_PLAYING);
 		}
+	}.bind(this));
+	//ユーザーが石を置いた
+	event.on("putComplete",function(index){
+		this.put=true;
+	}.bind(this));
+	//新しいターン
+	event.on("setTurn",function(turn){
+		this.put=false;
+		this.turn=turn;
 	}.bind(this));
 };
 UserList.prototype.renderInit=function(view){
@@ -264,6 +424,9 @@ UserBox.prototype.renderInit=function(view){
 	//状態欄
 	store.state=document.createElement("p");
 	div.appendChild(store.state);
+	//コマンド欄
+	store.command=document.createElement("p");
+	div.appendChild(store.command);
 	return div;
 };
 UserBox.prototype.render=function(view){
@@ -272,6 +435,7 @@ UserBox.prototype.render=function(view){
 	if(this.state===UserBox.STATE_PREPARING){
 		//準備中
 		store.state.textContent="準備中";
+		store.command.textContent="";
 		if(this.name==null){
 			//名前が未決定だ!
 			if(this.user.internal){
@@ -303,6 +467,19 @@ UserBox.prototype.render=function(view){
 	}else{
 		store.name.textContent=this.name;
 		store.state.textContent= this.state===UserBox.STATE_TURNPLAYER ? "ターンプレイヤー" : "待機中";
+		store.command.textContent="";
+		if(this.state===UserBox.STATE_TURNPLAYER && this.user.internal){
+			//ターンを回す
+			store.command.appendChild(function(_this){
+				var input=document.createElement("input");
+				input.type="button";
+				input.value="ターン終了";
+				input.addEventListener("click",function(e){
+					_this.user.event.emit("turnend");
+				},false);
+				return input;
+			}(this));
+		}
 	}
 };
 
