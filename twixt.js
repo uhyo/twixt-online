@@ -68,6 +68,7 @@ function TwixtHost(game,event,param){
 }
 TwixtHost.STATE_PREPARING=1;
 TwixtHost.STATE_PLAYING=2;
+TwixtHost.STATE_FINISHED=3;
 TwixtHost.prototype.init=function(game,event,param){
 	//イベント待受
 	event.on("entry",function(user){
@@ -266,9 +267,89 @@ Board.prototype.init=function(game,event,param){
 				y:y,
 			};
 		}
+
 	}.bind(this));
 	event.on("setLink",function(index,from,to){
+		var _this=this;
 		this.links[from.x+","+from.y+","+to.x+","+to.y]=index;
+		//勝利判定
+		if(judge(index)){
+			//勝った
+		}
+
+		//勝利判定
+		function judge(index){
+			var stones=_this.stones;
+			var links=_this.links;
+			var flag={};	//"x,y":true(探索済)
+			var result=false;
+			//探索用方向指示
+			var back=[[-2,-1],[-1,-2],[-1,2],[-2,1]];
+			var forward=[[1,-2],[2,-1],[2,1],[1,2]];
+			if(index===0){
+				//1P:上から探索
+				for(var x=1;x<setting.fieldx-1;x++){
+					if(!flag[x+",0"]){
+						//未探索
+						explore(index,x,0);
+					}
+				}
+				//全探索終了。下端に到達したかどうか見る
+				for(var x=1;x<setting.fieldx-1;x++){
+					if(flag[x+","+(setting.fieldy-1)]){
+						//あった
+						result=true;
+						break;
+					}
+				}
+			}else if(index===1){
+				//2P:左から探索
+				for(var y=1;y<setting.fieldy-1;y++){
+					if(!flag["0,"+y]){
+						//未探索
+						explore(index,0,y);
+					}
+				}
+				for(var y=1;y<setting.fieldy-1;y++){
+					if(flag[(setting.fieldx-1)+","+y]){
+						//あった
+						result=true;
+						break;
+					}
+				}
+			}
+			return result;
+			//探索
+			function explore(index,x,y){
+				flag[x+","+y]=true;	//探索済
+				for(var i=0;i<4;i++){
+					var nx=x+back[i][0], ny=y+back[i][1];
+					//リンクを探す
+					var ln=links[nx+","+ny+","+x+","+y];
+					if(ln===index){
+						//あった
+						if(!flag[nx+","+ny]){
+							//未探索だ
+							flag[nx+","+ny]=true;
+							explore(index,nx,ny);
+						}
+					}
+				}
+				for(var i=0;i<4;i++){
+					var nx=x+forward[i][0], ny=y+forward[i][1];
+					//リンクを探す
+					var ln=links[x+","+y+","+nx+","+ny];
+					if(ln===index){
+						//あった
+						if(!flag[nx+","+ny]){
+							//未探索だ
+							flag[nx+","+ny]=true;
+							explore(index,nx,ny);
+						}
+					}
+				}
+			}
+		}
 	}.bind(this));
 	event.on("elimLink",function(index,from,to){
 		delete this.links[from.x+","+from.y+","+to.x+","+to.y];
@@ -618,10 +699,13 @@ function UserBox(game,event,param){
 	this.list=param.list;	//UserList
 	this.name=null;
 	this.state=UserBox.STATE_PREPARING;
+	//勝ってるか?
+	this.result=null;
 }
 UserBox.STATE_PREPARING=1;
 UserBox.STATE_TURNPLAYER=2;
 UserBox.STATE_WAITING=3;
+UserBox.STATE_FINISHED=4;
 UserBox.prototype.init=function(game,event,param){
 	//ユーザー名
 	event.on("setName",function(name){
