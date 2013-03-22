@@ -132,6 +132,34 @@ TwixtHost.prototype.init=function(game,event,param){
 				box.event.emit("state", i===ul.turn ? UserBox.STATE_TURNPLAYER : UserBox.STATE_WAITING);
 			});
 		});
+		user.event.on("pierule",function(){
+			//パイルール適用
+			var ul=_this.userlist;
+			var tu=ul.users[ul.turn];
+			if(_this.state!==TwixtHost.STATE_PLAYING){
+				//まだ
+				return;
+			}
+			if(tu.user!==user){
+				//ターンプレイヤーではない
+				return;
+			}
+			if(ul.turncount!==1){
+				//パイルール適用できない
+				return;
+			}
+			if(ul.put){
+				//もうだめ
+				return;
+			}
+			//ターンをまわす
+			ul.host.board.event.emit("pierule",ul.turn);
+			ul.event.emit("setTurn",(ul.turn+1)%ul.users.length);
+			ul.users.forEach(function(box,i){
+				//ターンプレイヤーを設定
+				box.event.emit("state", i===ul.turn ? UserBox.STATE_TURNPLAYER : UserBox.STATE_WAITING);
+			});
+		});
 	}.bind(this));
 	//状態変化
 	event.on("state",function(state){
@@ -387,6 +415,13 @@ Board.prototype.init=function(game,event,param){
 	event.on("elimLink",function(index,from,to){
 		delete this.links[from.x+","+from.y+","+to.x+","+to.y];
 	}.bind(this));
+	//パイルール適用
+	event.on("pierule",function(index){
+		for(var key in this.stones){
+			this.stones[key]=index;
+			break;
+		}
+	}.bind(this));
 };
 Board.prototype.renderInit=function(view){
 	//盤面を初期化する
@@ -556,6 +591,14 @@ Board.prototype.renderInit=function(view){
 				c.r.baseVal.valueAsString=setting.stoneRadius+"px";
 				c.setAttribute("fill",setting.color[id]);
 			});
+			_this.event.on("pierule",function(index){
+				for(var key in _this.stones){
+					//a----
+					var c=store["point_"+key];
+					c.setAttribute("fill",setting.color[index]);
+					break;
+				}
+			});
 		}));
 		//ゴールライン的な
 		s.appendChild(svg("g",function(g){
@@ -657,6 +700,7 @@ Board.prototype.render=function(view){
 function UserList(game,event,param){
 	this.users=[];	//UserBox[]
 	this.host=param.host;	//TwixtHost
+	this.turncount=0;	//ターンカウント
 	this.turn=null;	//ターンプレイヤーの番号
 	this.put=null;	//すでに石をおいたかどうか
 }
@@ -704,6 +748,7 @@ UserList.prototype.init=function(game,event,param){
 	event.on("setTurn",function(turn){
 		this.put=false;
 		this.turn=turn;
+		this.turncount++;
 	}.bind(this));
 };
 UserList.prototype.renderInit=function(view){
@@ -830,6 +875,18 @@ UserBox.prototype.render=function(view){
 		store.state.textContent=st;
 		store.command.textContent="";
 		if(this.state===UserBox.STATE_TURNPLAYER && this.user.internal){
+			//パイルール適用できる
+			if(this.list.turncount===1){
+				store.command.appendChild(function(_this){
+					var input=document.createElement("input");
+					input.type="button";
+					input.value="パイルール適用";
+					input.addEventListener("click",function(e){
+						_this.user.event.emit("pierule");
+					},false);
+					return input;
+				}(this));
+			}
 			//ターンを回す
 			store.command.appendChild(function(_this){
 				var input=document.createElement("input");
