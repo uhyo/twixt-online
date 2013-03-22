@@ -723,7 +723,15 @@ UserList.prototype.init=function(game,event,param){
 	}.bind(this));
 	event.on("bye",function(user){
 		//ユーザーがいなくなった
-	});
+		this.users=this.users.filter(function(box){return box.user!==user});
+		if(this.users.length===0){
+			//そして誰もいなくなった
+			var board=game.add(Board,{
+				host:this.host,
+			});
+			this.host.event.emit("init",board,this);
+		}
+	}.bind(this));
 	//UserBoxのひとが名前を決定した
 	event.on("ready",function(box){
 		if(this.users.length===setting.playerNumber && this.users.every(function(box){
