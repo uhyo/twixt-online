@@ -29,8 +29,8 @@ var setting={
 	//人数
 	playerNumber: game.env==="standalone" ? 1 : 2,
 	//点の数
-	fieldx:8,
-	fieldy:8,
+	fieldx:24,
+	fieldy:24,
 	//描画関係
 	backgroundColor:"#cccccc",
 	bglineColor:"#00aa00",
