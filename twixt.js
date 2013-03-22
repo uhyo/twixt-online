@@ -29,8 +29,8 @@ var setting={
 	//人数
 	playerNumber: game.env==="standalone" ? 1 : 2,
 	//点の数
-	fieldx:24,
-	fieldy:24,
+	fieldx:8,
+	fieldy:8,
 	//描画関係
 	backgroundColor:"#cccccc",
 	bglineColor:"#00aa00",
@@ -117,6 +117,10 @@ TwixtHost.prototype.init=function(game,event,param){
 			//ターン終了する
 			var ul=_this.userlist;
 			var tu=ul.users[ul.turn];
+			if(_this.state!==TwixtHost.STATE_PLAYING){
+				//まだ
+				return;
+			}
 			if(tu.user!==user){
 				//ターンプレイヤーではない
 				return;
@@ -133,18 +137,46 @@ TwixtHost.prototype.init=function(game,event,param){
 	event.on("state",function(state){
 		this.state=state;
 	}.bind(this));
+	event.on("end",function(winner){
+		//この人がかった
+		event.emit("state",TwixtHost.STATE_FINISHED);
+		//ユーザーたち・・・
+		this.userlist.users.forEach(function(box,i){
+			box.event.emit("state", i===winner ? UserBox.STATE_WINNER : UserBox.STATE_LOSER);
+		});
+		//しばらくしたら初期化する
+		setTimeout(function(){
+			var board=game.add(Board,{
+				host:this,
+			});
+			var userlist=game.add(UserList,{
+				host:this,
+			});
+			event.emit("init",board,userlist);
+		}.bind(this),10000);
+	}.bind(this));
+	//初期化
+	event.on("init",function(board,userlist){
+		this.board=board;
+		this.userlist=userlist;
+	}.bind(this));
 };
 TwixtHost.prototype.renderTop=true;
 TwixtHost.prototype.renderInit=function(view){
 	var div=document.createElement("div");
-	//ボード
-	div.appendChild(view.render(this.board));
-	//ユーザー一覧
-	div.appendChild(view.render(this.userlist));
 	return div;
 };
 TwixtHost.prototype.render=function(view){
 	var div=view.getItem();
+	//中身けす
+	var range=document.createRange();
+	range.selectNodeContents(div);
+	range.deleteContents();
+	range.detach();
+	//ボード
+	div.appendChild(view.render(this.board));
+	//ユーザー一覧
+	div.appendChild(view.render(this.userlist));
 };
 function Board(game,event,param){
 	this.stones={};	//"x,y":index
@@ -275,6 +307,7 @@ Board.prototype.init=function(game,event,param){
 		//勝利判定
 		if(judge(index)){
 			//勝った
+			this.host.event.emit("end",index);
 		}
 
 		//勝利判定
@@ -481,7 +514,7 @@ Board.prototype.renderInit=function(view){
 					}else{
 						//自分の色かチェック
 						var ul=this.host.userlist;
-						if(game.user===ul.users[st].user && ul.turn===st){
+						if(game.user===ul.users[st].user && this.host.state===TwixtHost.STATE_PLAYING && ul.turn===st){
 							//自分の色だ! リンク置く準備
 							var c=store.linkStart;
 							if(linkTarget){
@@ -705,7 +738,8 @@ function UserBox(game,event,param){
 UserBox.STATE_PREPARING=1;
 UserBox.STATE_TURNPLAYER=2;
 UserBox.STATE_WAITING=3;
-UserBox.STATE_FINISHED=4;
+UserBox.STATE_WINNER=4;
+UserBox.STATE_LOSER=5;
 UserBox.prototype.init=function(game,event,param){
 	//ユーザー名
 	event.on("setName",function(name){
@@ -778,7 +812,22 @@ UserBox.prototype.render=function(view){
 		}
 	}else{
 		store.name.textContent=this.name;
-		store.state.textContent= this.state===UserBox.STATE_TURNPLAYER ? "ターンプレイヤー" : "待機中";
+		var st;
+		switch(this.state){
+			case UserBox.STATE_TURNPLAYER:
+				st="ターンプレイヤー";
+				break;
+			case UserBox.STATE_WAITING:
+				st="待機中";
+				break;
+			case UserBox.STATE_WINNER:
+				st="勝ち";
+				break;
+			case UserBox.STATE_LOSER:
+				st="負け";
+				break;
+		}
+		store.state.textContent=st;
 		store.command.textContent="";
 		if(this.state===UserBox.STATE_TURNPLAYER && this.user.internal){
 			//ターンを回す
