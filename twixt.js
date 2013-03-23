@@ -203,9 +203,19 @@ TwixtHost.prototype.render=function(view){
 	range.deleteContents();
 	range.detach();
 	//ボード
-	div.appendChild(view.render(this.board));
+	var d=document.createElement("div");
+	d.appendChild(view.render(this.board));
 	//ユーザー一覧
-	div.appendChild(view.render(this.userlist));
+	d.appendChild(view.render(this.userlist));
+	div.appendChild(d);
+	//ルール説明をしたにつくる
+	["点をクリックするとペグを置きます。リンクを置いたり外すには2つのペグを順にクリックします。",
+	 "ペグを置くと相手にターンが移るので、ペグを置いたターンにそのペグにリンクをつなぐことはできません。"
+	].forEach(function(str){
+		var p=document.createElement("p");
+		p.textContent=str;
+		div.appendChild(p);
+	});
 };
 function Board(game,event,param){
 	this.stones={};	//"x,y":index
@@ -474,7 +484,7 @@ Board.prototype.renderInit=function(view){
 					g.appendChild(svg("circle",function(c){
 						c.cx.baseVal.valueAsString=(x+1)*setting.pointDistance+"px";
 						c.cy.baseVal.valueAsString=(y+1)*setting.pointDistance+"px";
-						if(stones[x+","+y]){
+						if(stones[x+","+y]!=null){
 							//既に石が置いてある
 							c.r.baseVal.valueAsString=setting.stoneRadius+"px";
 							c.setAttribute("fill",setting.color[stones[x+","+y]]);
