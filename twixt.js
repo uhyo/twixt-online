@@ -152,12 +152,11 @@ TwixtHost.prototype.init=function(game,event,param){
 				//もうだめ
 				return;
 			}
-			//ターンをまわす
-			ul.host.board.event.emit("pierule",ul.turn);
-			ul.event.emit("setTurn",(ul.turn+1)%ul.users.length);
+			ul.event.emit("pierule",ul.turn);
 			ul.users.forEach(function(box,i){
 				//ターンプレイヤーを設定
 				box.event.emit("state", i===ul.turn ? UserBox.STATE_TURNPLAYER : UserBox.STATE_WAITING);
+				box.event.emit("setindex",i);
 			});
 		});
 	}.bind(this));
@@ -181,7 +180,7 @@ TwixtHost.prototype.init=function(game,event,param){
 				host:this,
 			});
 			event.emit("init",board,userlist);
-		}.bind(this),10000);
+		}.bind(this),30000);
 	}.bind(this));
 	//初期化
 	event.on("init",function(board,userlist){
@@ -230,7 +229,13 @@ Board.prototype.init=function(game,event,param){
 	event.on("setStone",function(index,x,y){
 		this.stones[x+","+y]=index;
 		//置いた通知
-		this.host.userlist.event.emit("putComplete",index);
+		//this.host.userlist.event.emit("putComplete",index);
+		var ul=this.host.userlist;
+		ul.event.emit("setTurn",(ul.turn+1)%ul.users.length);
+		ul.users.forEach(function(box,i){
+			//ターンプレイヤーを設定
+			box.event.emit("state", i===ul.turn ? UserBox.STATE_TURNPLAYER : UserBox.STATE_WAITING);
+		});
 	}.bind(this));
 	//リンクを設置要請（確定ではないようだ）
 	event.on("putLink",function(index,from,to){
@@ -415,13 +420,6 @@ Board.prototype.init=function(game,event,param){
 	event.on("elimLink",function(index,from,to){
 		delete this.links[from.x+","+from.y+","+to.x+","+to.y];
 	}.bind(this));
-	//パイルール適用
-	event.on("pierule",function(index){
-		for(var key in this.stones){
-			this.stones[key]=index;
-			break;
-		}
-	}.bind(this));
 };
 Board.prototype.renderInit=function(view){
 	//盤面を初期化する
@@ -591,14 +589,6 @@ Board.prototype.renderInit=function(view){
 				c.r.baseVal.valueAsString=setting.stoneRadius+"px";
 				c.setAttribute("fill",setting.color[id]);
 			});
-			_this.event.on("pierule",function(index){
-				for(var key in _this.stones){
-					//a----
-					var c=store["point_"+key];
-					c.setAttribute("fill",setting.color[index]);
-					break;
-				}
-			});
 		}));
 		//ゴールライン的な
 		s.appendChild(svg("g",function(g){
@@ -758,6 +748,12 @@ UserList.prototype.init=function(game,event,param){
 		this.turn=turn;
 		this.turncount++;
 	}.bind(this));
+	//パイルール適用
+	event.on("pierule",function(turn){
+		//交代
+		this.users.reverse();
+		this.turncount++;
+	}.bind(this));
 };
 UserList.prototype.renderInit=function(view){
 	var div=document.createElement("div");
@@ -810,6 +806,10 @@ UserBox.prototype.init=function(game,event,param){
 	event.on("state",function(state){
 		this.state=state;
 	}.bind(this));
+	//番号変更
+	event.on("setindex",function(index){
+		this.index=index;
+	}.bind(this));
 
 };
 UserBox.prototype.renderInit=function(view){
@@ -831,6 +831,7 @@ UserBox.prototype.renderInit=function(view){
 UserBox.prototype.render=function(view){
 	var div=view.getItem();
 	var store=view.getStore();
+	div.style.backgroundColor=setting.lightColor[this.index];
 	if(this.state===UserBox.STATE_PREPARING){
 		//準備中
 		store.state.textContent="準備中";
@@ -899,7 +900,7 @@ UserBox.prototype.render=function(view){
 			store.command.appendChild(function(_this){
 				var input=document.createElement("input");
 				input.type="button";
-				input.value="ターン終了";
+				input.value="パス";
 				input.addEventListener("click",function(e){
 					_this.user.event.emit("turnend");
 				},false);
