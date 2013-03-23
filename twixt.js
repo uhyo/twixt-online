@@ -31,8 +31,8 @@ var setting={
 	//人数
 	playerNumber: game.env==="standalone" ? 1 : 2,
 	//点の数
-	fieldx:24,
-	fieldy:24,
+	fieldx:6,
+	fieldy:6,
 	//描画関係
 	backgroundColor:"#cccccc",
 	bglineColor:"#00aa00",
@@ -732,7 +732,10 @@ UserList.prototype.init=function(game,event,param){
 			var board=game.add(Board,{
 				host:this.host,
 			});
-			this.host.event.emit("init",board,this);
+			var userlist=game.add(UserList,{
+				host:this.host,
+			});
+			this.host.event.emit("init",board,userlist);
 		}
 	}.bind(this));
 	//UserBoxのひとが名前を決定した
@@ -830,12 +833,9 @@ UserBox.prototype.init=function(game,event,param){
 		//親に伝える
 		this.list.event.emit("ready",this);
 	}.bind(this));
-	if(this.state===UserBox.STATE_PREPARING && this.name==null){
-		//まだ名前が決まっていない（初期状態）
-		this.user.event.once("setName",function(name){
-			event.emit("setName",name);
-		}.bind(this));
-	}
+	this.user.event.on("setName",function(name){
+		event.emit("setName",name);
+	}.bind(this));
 	//状態変化
 	event.on("state",function(state){
 		this.state=state;
@@ -919,6 +919,7 @@ UserBox.prototype.render=function(view){
 		store.command.textContent="";
 		if(this.state===UserBox.STATE_TURNPLAYER && this.user.internal){
 			//パイルール適用できる
+			console.log("π",this.list.turncount);
 			if(this.list.turncount===1){
 				store.command.appendChild(function(_this){
 					var input=document.createElement("input");
