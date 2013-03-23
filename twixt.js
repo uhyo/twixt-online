@@ -13,10 +13,12 @@ game.event.on("gamestart",function(){
 	var twixt=game.add(TwixtHost);
 	//ユーザーの出現を待つ
 	game.event.on("entry",function(user){
-		if(twixt.userlist.users.length<setting.playerNumber){
-			//参加枠あり
-			twixt.event.emit("entry",user);
-		}
+		user.event.once("entry",function(){
+			if(twixt.userlist.users.length<setting.playerNumber){
+				//参加枠あり
+				twixt.event.emit("entry",user);
+			}
+		});
 	});
 });
 game.start();
@@ -492,7 +494,8 @@ Board.prototype.renderInit=function(view){
 						c.cx.baseVal.valueAsString=(x+1)*setting.pointDistance+"px";
 						c.cy.baseVal.valueAsString=(y+1)*setting.pointDistance+"px";
 						c.r.baseVal.valueAsString=setting.pointClickRadius+"px";
-						c.setAttribute("fill","transparent");
+						c.setAttribute("fill","black");
+						c.setAttribute("opacity","0");
 						c.className.baseVal="cover";
 						//パラメータ
 						c.setAttributeNS(twixtNamespace,"x",String(x));
@@ -770,9 +773,30 @@ UserList.prototype.render=function(view){
 	range.deleteContents();
 	range.detach();
 
+	var flag=false;
 	this.users.forEach(function(box){
+		if(box.user===game.user)flag=true;
 		div.appendChild(view.render(box));
 	});
+	if(!flag && this.users.length<setting.playerNumber){
+		//まだ参加していない
+		//参加ボックス
+		var d=document.createElement("div");
+		d.appendChild(function(){
+			var p=document.createElement("p");
+			p.appendChild(function(){
+				var input=document.createElement("input");
+				input.type="button";
+				input.value="ゲームに参加";
+				input.addEventListener("click",function(e){
+					game.user.event.emit("entry");
+				},false);
+				return input;
+			}());
+			return p;
+		}());
+		div.appendChild(d);
+	}
 };
 function UserBox(game,event,param){
 	this.index=param.index||0;
