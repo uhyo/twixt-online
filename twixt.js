@@ -466,6 +466,44 @@ Board.prototype.renderInit=function(view){
 				}));
 			});
 		}));
+		//リンク
+		s.appendChild(svg("g",function(g){
+			for(var key in _this.links){
+				var arr=key.split(",").map(function(x){return x-0;});
+				newLink(_this.links[key],{
+					x:arr[0],y:arr[1],
+				},{
+					x:arr[2],y:arr[3],
+				});
+			}
+			//リンクが置かれたら書き換え
+			g.id="links";
+			_this.event.on("setLink",function(index,from,to){
+				//リンク（線）
+				newLink(index,from,to);
+			});
+			//外されたらけす
+			_this.event.on("elimLink",function(index,from,to){
+				var linkaddr="link_"+from.x+","+from.y+","+to.x+","+to.y;
+				var link=store[linkaddr];
+				delete store[linkaddr];
+				link.parentNode.removeChild(link);
+			});
+			function newLink(index,from,to){
+				var line=svg("line",function(line){
+					line.x1.baseVal.valueAsString=(from.x+1)*setting.pointDistance+"px";
+					line.y1.baseVal.valueAsString=(from.y+1)*setting.pointDistance+"px";
+					line.x2.baseVal.valueAsString=(to.x+1)*setting.pointDistance+"px";
+					line.y2.baseVal.valueAsString=(to.y+1)*setting.pointDistance+"px";
+					//色
+					line.setAttribute("stroke",setting.color[index]);
+					line.setAttribute("stroke-width",setting.linkWidth+"px");
+					line.setAttribute("stroke-linecap","butt");
+				});
+				store["link_"+from.x+","+from.y+","+to.x+","+to.y]=line;
+				g.appendChild(line);
+			}
+		}));
 		//点のg
 		s.appendChild(svg("g",function(g){
 			g.id="points";
@@ -646,44 +684,6 @@ Board.prototype.renderInit=function(view){
 				line.setAttribute("stroke-width",setting.goallineWidth+"px");
 				line.setAttribute("stroke-linecap","square");
 			}));
-		}));
-		//リンク
-		s.appendChild(svg("g",function(g){
-			for(var key in _this.links){
-				var arr=key.split(",").map(function(x){return x-0;});
-				newLink(_this.links[key],{
-					x:arr[0],y:arr[1],
-				},{
-					x:arr[2],y:arr[3],
-				});
-			}
-			//リンクが置かれたら書き換え
-			g.id="links";
-			_this.event.on("setLink",function(index,from,to){
-				//リンク（線）
-				newLink(index,from,to);
-			});
-			//外されたらけす
-			_this.event.on("elimLink",function(index,from,to){
-				var linkaddr="link_"+from.x+","+from.y+","+to.x+","+to.y;
-				var link=store[linkaddr];
-				delete store[linkaddr];
-				link.parentNode.removeChild(link);
-			});
-			function newLink(index,from,to){
-				var line=svg("line",function(line){
-					line.x1.baseVal.valueAsString=(from.x+1)*setting.pointDistance+"px";
-					line.y1.baseVal.valueAsString=(from.y+1)*setting.pointDistance+"px";
-					line.x2.baseVal.valueAsString=(to.x+1)*setting.pointDistance+"px";
-					line.y2.baseVal.valueAsString=(to.y+1)*setting.pointDistance+"px";
-					//色
-					line.setAttribute("stroke",setting.color[index]);
-					line.setAttribute("stroke-width",setting.linkWidth+"px");
-					line.setAttribute("stroke-linecap","butt");
-				});
-				store["link_"+from.x+","+from.y+","+to.x+","+to.y]=line;
-				g.appendChild(line);
-			}
 		}));
 	});
 	//スタイル設定
